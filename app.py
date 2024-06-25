@@ -14,7 +14,7 @@ line_bot_api = LineBotApi(os.getenv('CHANNEL_ACCESS_TOKEN'))
 # Channel Secret
 handler = WebhookHandler(os.getenv('CHANNEL_SECRET'))
 
-# 記錄群組的日期與金額
+# 記錄群組的金額與待開發票
 group_amounts = {}
 
 # 檢查是否有儲存過的金額記錄檔案，若有則載入
@@ -67,7 +67,7 @@ def handle_message(event):
                         amount = float(amount_str)
                         date = datetime.strptime(date_str, '%Y.%m.%d').date()  # 使用 %Y 修正年份格式
                         if group_id not in group_amounts:
-                            group_amounts[group_id] = {'unpaid': {}, 'paid': {}}
+                            group_amounts[group_id] = {'unpaid': {}, 'paid': {}, 'invoices': {}}
                         if user_id not in group_amounts[group_id]['unpaid']:
                             group_amounts[group_id]['unpaid'][user_id] = []
                         group_amounts[group_id]['unpaid'][user_id].append((date_str, amount))
@@ -96,7 +96,7 @@ def handle_message(event):
                         amount = float(amount_str)
                         date = datetime.strptime(date_str, '%Y.%m.%d').date()  # 使用 %Y 修正年份格式
                         if group_id not in group_amounts:
-                            group_amounts[group_id] = {'unpaid': {}, 'paid': {}}
+                            group_amounts[group_id] = {'unpaid': {}, 'paid': {}, 'invoices': {}}
                         if user_id not in group_amounts[group_id]['paid']:
                             group_amounts[group_id]['paid'][user_id] = []
                         group_amounts[group_id]['paid'][user_id].append((date_str, amount))
@@ -112,13 +112,49 @@ def handle_message(event):
             else:
                 reply_msg = '\n'.join(error_msgs)
         
+        elif msg.startswith('記錄待開發票 '):
+            lines = msg.splitlines()
+            success_msgs = []
+            error_msgs = []
+            for line in lines:
+                parts = line.split(' ')
+                if len(parts) == 4:
+                    amount_str = parts[1].replace('$', '').replace('＄', '').strip()
+                    supplier_name = parts[3]
+                    if amount_str.replace('.', '', 1).isdigit():  # 檢查是否為有效的金額格式
+                        amount = float(amount_str)
+                        if group_id not in group_amounts:
+                            group_amounts[group_id] = {'unpaid': {}, 'paid': {}, 'invoices': {}}
+                        if user_id not in group_amounts[group_id]['invoices']:
+                            group_amounts[group_id]['invoices'][user_id] = []
+                        group_amounts[group_id]['invoices'][user_id].append((amount, supplier_name))
+                        success_msgs.append(f'已記錄待開發票金額 {amount} 廠商: {supplier_name}')
+                    else:
+                        error_msgs.append(f'金額格式錯誤: {amount_str}')
+                else:
+                    error_msgs.append(f'指令格式錯誤: {line}')
+            
+            if success_msgs:
+                save_group_amounts()  # 儲存更新後的金額記錄
+                reply_msg = '\n'.join(success_msgs)
+            else:
+                reply_msg = '\n'.join(error_msgs)
+        
         elif msg == '查詢總金額':
             if group_id in group_amounts:
                 unpaid_total = sum(amount for user_id in group_amounts[group_id]['unpaid'] for date_str, amount in group_amounts[group_id]['unpaid'][user_id])
                 paid_total = sum(amount for user_id in group_amounts[group_id]['paid'] for date_str, amount in group_amounts[group_id]['paid'][user_id])
+                invoice_total = sum(amount for user_id in group_amounts[group_id]['invoices'] for amount, supplier in group_amounts[group_id]['invoices'][user_id])
+                
                 unpaid_records = '\n'.join(f'{date_str}: ${amount}' for user_id in group_amounts[group_id]['unpaid'] for date_str, amount in group_amounts[group_id]['unpaid'][user_id])
                 paid_records = '\n'.join(f'{date_str}: ${amount}' for user_id in group_amounts[group_id]['paid'] for date_str, amount in group_amounts[group_id]['paid'][user_id])
-                reply_msg = f'待付款總額: ${unpaid_total}\n待付款記錄:\n{unpaid_records}\n\n已匯款總額: ${paid_total}\n已匯款記錄:\n{paid_records}'
+                invoice_records = '\n'.join(f'${amount} 廠商: {supplier}' for user_id in group_amounts[group_id]['invoices'] for amount, supplier in group_amounts[group_id]['invoices'][user_id])
+                
+                reply_msg = (
+                    f'待付款總額: ${unpaid_total}\n待付款記錄:\n{unpaid_records}\n\n'
+                    f'已匯款總額: ${paid_total}\n已匯款記錄:\n{paid_records}\n\n'
+                    f'待開發票總額: ${invoice_total}\n待開發票記錄:\n{invoice_records}'
+                )
             else:
                 reply_msg = '目前沒有記錄任何貨款'
         
@@ -132,9 +168,9 @@ def handle_message(event):
                     date_str = parts[1]
                     if group_id in group_amounts and user_id in group_amounts[group_id]['unpaid']:
                         group_amounts[group_id]['unpaid'][user_id] = [(d, a) for d, a in group_amounts[group_id]['unpaid'][user_id] if d != date_str]
-                        success_msgs.append(f'已刪除 {date_str} 的所有貨款記錄')
+                        success_msgs.append(f'已刪除 {date_str} 的所有待付款記錄')
                     else:
-                        error_msgs.append(f'找不到 {date_str} 的貨款記錄')
+                        error_msgs.append(f'找不到 {date_str} 的待付款記錄')
                 else:
                     error_msgs.append(f'指令格式錯誤: {line}')
             
@@ -166,16 +202,35 @@ def handle_message(event):
             else:
                 reply_msg = '\n'.join(error_msgs)
         
-        elif msg == '刪除所有金額':
-            if group_id in group_amounts:
-                del group_amounts[group_id]
+        elif msg.startswith('刪除待開發票 '):
+            lines = msg.splitlines()
+            success_msgs = []
+            error_msgs = []
+            for line in lines:
+                parts = line.split(' ')
+                if len(parts) == 4:
+                    amount_str = parts[1].replace('$', '').replace('＄', '').strip()
+                    supplier_name = parts[3]
+                    if amount_str.replace('.', '', 1).isdigit():  # 檢查是否為有效的金額格式
+                        amount = float(amount_str)
+                        if group_id in group_amounts and user_id in group_amounts[group_id]['invoices']:
+                            group_amounts[group_id]['invoices'][user_id] = [(a, s) for a, s in group_amounts[group_id]['invoices'][user_id] if not (a == amount and s == supplier_name)]
+                            success_msgs.append(f'已刪除待開發票金額 {amount} 廠商: {supplier_name}')
+                        else:
+                            error_msgs.append(f'找不到待開發票金額 {amount} 廠商: {supplier_name} 的記錄')
+                    else:
+                        error_msgs.append(f'金額格式錯誤: {amount_str}')
+                else:
+                    error_msgs.append(f'指令格式錯誤: {line}')
+            
+            if success_msgs:
                 save_group_amounts()  # 儲存更新後的金額記錄
-                reply_msg = '已刪除所有金額貨款'
+                reply_msg = '\n'.join(success_msgs)
             else:
-                reply_msg = '目前沒有記錄任何金額'
+                reply_msg = '\n'.join(error_msgs)
         
         else:
-            reply_msg = '請輸入有效指令，如「記錄金額 yyyy.mm.dd $金額」、「記錄匯款 yyyy.mm.dd $金額」、「查詢總金額」、「刪除金額 yyyy.mm.dd」、「刪除匯款 yyyy.mm.dd」或「刪除所有金額」'
+            reply_msg = '請輸入有效指令，如「記錄金額 yyyy.mm.dd $金額」、「記錄匯款 yyyy.mm.dd $金額」、「記錄待開發票 $金額 廠商名字」、「查詢總金額」、「刪除金額 yyyy.mm.dd」、「刪除匯款 yyyy.mm.dd」或「刪除待開發票 $金額 廠商名字」'
 
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_msg))
         
@@ -185,4 +240,4 @@ def handle_message(event):
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0',port=port)
+    app.run(host='0.0.0.0', port=port)
