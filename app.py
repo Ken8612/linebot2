@@ -229,6 +229,8 @@ def handle_message(event):
             else:
                 reply_msg = '\n'.join(error_msgs)
         
+        else:
+            reply_msg = '請輸入有效指令，如「記錄金額 yyyy.mm.dd $金額」、「記錄匯款 yyyy.mm.dd $金額」、「記錄待開發票 $金額 廠商名字」、「查詢總金額」、「刪除金額 yyyy.mm.dd」、「刪除匯款 yyyy.mm.dd」或「刪除待開發票 $金額 廠商名字」'
 
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_msg))
         
