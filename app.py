@@ -1,90 +1,65 @@
-from fastapi import FastAPI, Request
-from linebot import LineBotApi, WebhookParser
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import gspread
-from google.oauth2.service_account import Credentials
-import json
 import os
-import uvicorn
-
-app = FastAPI()
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from flask import Flask, request, abort
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
 # 讀取環境變數
 CHANNEL_ACCESS_TOKEN = os.getenv("CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("CHANNEL_SECRET")
 GOOGLE_CREDENTIALS = os.getenv("GOOGLE_CREDENTIALS")
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 
-# 環境變數檢查
-if not all([CHANNEL_ACCESS_TOKEN, CHANNEL_SECRET, GOOGLE_CREDENTIALS, SPREADSHEET_ID]):
-    raise ValueError("請確認所有環境變數都已設定")
+# 驗證 Google Sheets API
+credentials_dict = json.loads(GOOGLE_CREDENTIALS)
+scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+gc = gspread.authorize(credentials)
 
-# 設定 LINE Bot
+# 連接 Google 試算表
+SPREADSHEET_NAME = "叫貨紀錄"
+sheet = gc.open(SPREADSHEET_NAME).sheet1
+
+# 初始化 Flask 應用
+app = Flask(__name__)
+
+# 初始化 LINE Bot
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
-parser = WebhookParser(CHANNEL_SECRET)
+handler = WebhookHandler(CHANNEL_SECRET)
 
-# 設定 Google Sheets API
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-creds_json = json.loads(GOOGLE_CREDENTIALS)
-creds = Credentials.from_service_account_info(creds_json, scopes=SCOPES)
-client = gspread.authorize(creds)
-sheet = client.open_by_key(SPREADSHEET_ID).sheet1
-
-# Google Sheets 寫入函式
-def record_order(amount):
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers['X-Line-Signature']
+    body = request.get_data(as_text=True)
     try:
-        sheet.append_row(["叫貨", amount])
-        return True
-    except Exception as e:
-        print(f"寫入 Google Sheets 失敗: {e}")
-        return False
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+    return 'OK'
 
-def record_pending_order(item):
-    try:
-        sheet.append_row(["待訂", item])
-        return True
-    except Exception as e:
-        print(f"寫入 Google Sheets 失敗: {e}")
-        return False
+@handler.add(MessageEvent, message=TextMessage)
+def handle_message(event):
+    user_message = event.message.text.strip()
+    reply_text = ""
+    
+    if user_message.startswith("叫貨 "):
+        try:
+            data = user_message[3:].split()
+            if len(data) != 2:
+                reply_text = "格式錯誤！請使用: 叫貨 品名 金額"
+            else:
+                item, amount = data
+                sheet.append_row([item, amount])
+                reply_text = f"已記錄: {item} - {amount} 元"
+        except Exception as e:
+            reply_text = "記錄失敗，請稍後再試"
+    else:
+        reply_text = "請使用: 叫貨 品名 金額 來記錄訂單"
+    
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
-# 處理 LINE 訊息
-@app.post("/webhook")
-async def webhook(request: Request):
-    body = await request.text()
-    signature = request.headers.get("X-Line-Signature")
-
-    try:
-        events = parser.parse(body, signature)
-        for event in events:
-            if isinstance(event, MessageEvent) and isinstance(event.message, TextMessage):
-                user_message = event.message.text
-                reply_token = event.reply_token
-
-                if user_message.startswith("#叫貨"):
-                    amount = user_message.replace("#叫貨", "").strip()
-                    if record_order(amount):
-                        response = f"✅ 已記錄叫貨金額: {amount} 元"
-                    else:
-                        response = "⚠️ 叫貨記錄失敗，請稍後再試"
-
-                elif user_message.startswith("#待訂"):
-                    item = user_message.replace("#待訂", "").strip()
-                    if record_pending_order(item):
-                        response = f"✅ 已記錄待訂貨品: {item}"
-                    else:
-                        response = "⚠️ 待訂記錄失敗，請稍後再試"
-
-                else:
-                    response = "請使用 #叫貨 或 #待訂 指令"
-
-                line_bot_api.reply_message(reply_token, TextSendMessage(text=response))
-
-    except Exception as e:
-        print(f"Webhook 處理錯誤: {e}")
-
-    return "OK"
-
-# Render 啟動 FastAPI
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
