@@ -1,8 +1,4 @@
 flask
-openai < 1.0.0
-gunicorn
-fastapi
-uvicorn
 line-bot-sdk
 gspread
 oauth2client
