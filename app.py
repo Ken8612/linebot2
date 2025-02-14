@@ -17,7 +17,7 @@ parser = WebhookParser(LINE_CHANNEL_SECRET)
 # Google Sheets API 設定
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SERVICE_ACCOUNT_FILE = "credentials.json"  # 你的 Google 憑證 JSON 檔案
-SPREADSHEET_ID = "你的試算表ID"
+SPREADSHEET_ID = "工作表1"
 
 creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 client = gspread.authorize(creds)
