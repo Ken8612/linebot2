@@ -1,6 +1,5 @@
 Flask
 line-bot-sdk
 gspread
-google-auth
-google-auth-oauthlib
+oauth2client
 gunicorn
