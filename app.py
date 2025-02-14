@@ -4,7 +4,7 @@ from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
@@ -23,10 +23,9 @@ credentials_json = os.getenv("GOOGLE_CREDENTIALS")
 if credentials_json is None:
     raise ValueError("GOOGLE_CREDENTIALS 環境變數未設定")
 
-# 解析從環境變數獲得的 JSON 字符串並創建憑證
 credentials_dict = json.loads(credentials_json)
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+creds = Credentials.from_service_account_info(credentials_dict, scopes=scope)
 
 # 啟用 Google Sheets API
 client = gspread.authorize(creds)
