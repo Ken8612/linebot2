@@ -19,7 +19,7 @@ credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict,
 gc = gspread.authorize(credentials)
 
 # 連接 Google 試算表
-SPREADSHEET_NAME = "叫貨紀錄"
+SPREADSHEET_NAME = "17kJHc0aJp7K3Gsxrjes9ZCSVwadD9tPm-enQBs25tg4"
 sheet = gc.open(SPREADSHEET_NAME).sheet1
 
 # 初始化 Flask 應用
