@@ -1,6 +1,6 @@
-Flask==2.2.3
-line-bot-sdk==2.1.0
-gspread==5.4.0
-google-auth==2.21.0
-google-auth-oauthlib==0.5.3
+Flask
+line-bot-sdk
+gspread
+google-auth
+google-auth-oauthlib
 gunicorn
