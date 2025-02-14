@@ -1,3 +1,5 @@
+import os
+import json
 from flask import Flask, request
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, TextMessage
@@ -16,9 +18,17 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 SPREADSHEET_ID = "17kJHc0aJp7K3Gsxrjes9ZCSVwadD9tPm-enQBs25tg4"
 SHEET_NAME = "叫貨紀錄"
 
-# 啟用 Google Sheets API
+# 從環境變數加載 credentials.json
+credentials_json = os.getenv("GOOGLE_CREDENTIALS")
+if credentials_json is None:
+    raise ValueError("GOOGLE_CREDENTIALS 環境變數未設定")
+
+# 解析從環境變數獲得的 JSON 字符串並創建憑證
+credentials_dict = json.loads(credentials_json)
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+
+# 啟用 Google Sheets API
 client = gspread.authorize(creds)
 sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
 
@@ -45,7 +55,14 @@ def handle_message(event):
         timestamp = event.timestamp
 
         # 寫入 Google Sheets
-        sheet.append_row([user_id, user_message, timestamp])
+        try:
+            sheet.append_row([user_id, user_message, timestamp])
+        except Exception as e:
+            print(f"Error appending row to Google Sheets: {e}")
+            line_bot_api.reply_message(event.reply_token, TextMessage(text="儲存失敗，請稍後再試！"))
+            return
+        
+        # 回覆使用者
         line_bot_api.reply_message(event.reply_token, TextMessage(text="訊息已記錄！"))
 
 if __name__ == "__main__":
