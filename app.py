@@ -1,68 +1,73 @@
 import os
-import json
-from flask import Flask, request
-from linebot import LineBotApi, WebhookHandler
-from linebot.models import MessageEvent, TextMessage
-import gspread
+import sys
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from linebot import LineBotApi
+from linebot.models import TextMessage, Event, MessageEvent
+from linebot.exceptions import LineBotApiError
+from flask import Flask, request, abort
+from datetime import datetime
 
+# Line Bot 設定
+CHANNEL_ACCESS_TOKEN = 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'
+CHANNEL_SECRET = 'YOUR_LINE_CHANNEL_SECRET'
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+
+# Google Sheets API 設定
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SPREADSHEET_ID = 'YOUR_GOOGLE_SHEET_ID'
+
+# 設定 Flask 應用程式
 app = Flask(__name__)
 
-# LINE API 設定
-LINE_CHANNEL_ACCESS_TOKEN = "你的 Channel Access Token"
-LINE_CHANNEL_SECRET = "你的 Channel Secret"
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+# Google Sheets 服務設定
+def get_google_sheets_service():
+    credentials = Credentials.from_service_account_file(
+        'path-to-your-service-account-credentials.json', scopes=SCOPES)
+    service = build('sheets', 'v4', credentials=credentials)
+    return service.spreadsheets()
 
-# Google Sheets 設定
-SPREADSHEET_ID = "17kJHc0aJp7K3Gsxrjes9ZCSVwadD9tPm-enQBs25tg4"
-SHEET_NAME = "叫貨紀錄"
+# 記錄訊息到 Google Sheets
+def record_to_google_sheets(user_id, user_message):
+    try:
+        service = get_google_sheets_service()
+        range_ = 'Sheet1!A1:C1'  # 你希望寫入數據的範圍
+        values = [
+            [user_id, user_message, str(datetime.now())]  # 用戶 ID、訊息、時間
+        ]
+        body = {
+            'values': values
+        }
+        result = service.values().append(spreadsheetId=SPREADSHEET_ID, range=range_,
+                                          valueInputOption="RAW", body=body).execute()
+        print(f"Updated {result.get('updates').get('updatedCells')} cells.")
+    except Exception as e:
+        print(f"Error recording to Google Sheets: {e}")
 
-# 從環境變數加載 credentials.json
-credentials_json = os.getenv("GOOGLE_CREDENTIALS")
-if credentials_json is None:
-    raise ValueError("GOOGLE_CREDENTIALS 環境變數未設定")
-
-credentials_dict = json.loads(credentials_json)
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_info(credentials_dict, scopes=scope)
-
-# 啟用 Google Sheets API
-client = gspread.authorize(creds)
-sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-
-# 設定關鍵字篩選
-KEYWORDS = ["記錄", "存檔", "備忘"]
-
-@app.route("/", methods=["GET"])
-def home():
-    return "LINE Bot is running."
-
-@app.route("/callback", methods=["POST"])
+# 設定 Line Webhook 處理函數
+@app.route("/callback", methods=['POST'])
 def callback():
-    body = request.get_data(as_text=True)
-    handler.handle(body, request.headers["X-Line-Signature"])
-    return "OK"
+    if request.method == 'POST':
+        body = request.get_data(as_text=True)
+        signature = request.headers['X-Line-Signature']
 
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    user_message = event.message.text
-
-    # 檢查是否包含關鍵字
-    if any(keyword in user_message for keyword in KEYWORDS):
-        user_id = event.source.user_id
-        timestamp = event.timestamp
-
-        # 寫入 Google Sheets
         try:
-            sheet.append_row([user_id, user_message, timestamp])
-        except Exception as e:
-            print(f"Error appending row to Google Sheets: {e}")
-            line_bot_api.reply_message(event.reply_token, TextMessage(text="儲存失敗，請稍後再試！"))
-            return
-        
-        # 回覆使用者
-        line_bot_api.reply_message(event.reply_token, TextMessage(text="訊息已記錄！"))
+            events = line_bot_api.parse_events_from_json(body, signature)
+            for event in events:
+                if isinstance(event, MessageEvent):
+                    user_message = event.message.text
+                    user_id = event.source.user_id
+                    # 記錄訊息到 Google Sheets
+                    record_to_google_sheets(user_id, user_message)
+                    # 回覆用戶
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextMessage(text=f"已收到您的訊息：{user_message}")
+                    )
+        except LineBotApiError as e:
+            print(f"Error occurred: {e}")
+            abort(400)
+        return 'OK'
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host='0.0.0.0', port=5000)
