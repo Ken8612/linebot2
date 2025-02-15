@@ -3,19 +3,18 @@ import sys
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from linebot import LineBotApi
-from linebot.models import TextMessage, Event, MessageEvent
-from linebot.exceptions import LineBotApiError
+from linebot.models import TextMessage, MessageEvent
 from flask import Flask, request, abort
 from datetime import datetime
 
 # Line Bot 設定
-CHANNEL_ACCESS_TOKEN = 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'
-CHANNEL_SECRET = 'YOUR_LINE_CHANNEL_SECRET'
+CHANNEL_ACCESS_TOKEN = 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'  # 替換為你的 Line Channel Access Token
+CHANNEL_SECRET = 'YOUR_LINE_CHANNEL_SECRET'  # 替換為你的 Line Channel Secret
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 
 # Google Sheets API 設定
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-SPREADSHEET_ID = 'YOUR_GOOGLE_SHEET_ID'
+SPREADSHEET_ID = 'YOUR_GOOGLE_SHEET_ID'  # 替換為你的 Google Sheets ID
 
 # 設定 Flask 應用程式
 app = Flask(__name__)
@@ -23,7 +22,7 @@ app = Flask(__name__)
 # Google Sheets 服務設定
 def get_google_sheets_service():
     credentials = Credentials.from_service_account_file(
-        'path-to-your-service-account-credentials.json', scopes=SCOPES)
+        'credentials.json', scopes=SCOPES)  # 替換為你的 Service Account 金鑰路徑
     service = build('sheets', 'v4', credentials=credentials)
     return service.spreadsheets()
 
@@ -31,7 +30,7 @@ def get_google_sheets_service():
 def record_to_google_sheets(user_id, user_message):
     try:
         service = get_google_sheets_service()
-        range_ = 'Sheet1!A1:C1'  # 你希望寫入數據的範圍
+        range_ = 'Sheet1!A1:C1'  # 設定你的 Google Sheets 寫入範圍
         values = [
             [user_id, user_message, str(datetime.now())]  # 用戶 ID、訊息、時間
         ]
@@ -39,7 +38,7 @@ def record_to_google_sheets(user_id, user_message):
             'values': values
         }
         result = service.values().append(spreadsheetId=SPREADSHEET_ID, range=range_,
-                                          valueInputOption="RAW", body=body).execute()
+                                         valueInputOption="RAW", body=body).execute()
         print(f"Updated {result.get('updates').get('updatedCells')} cells.")
     except Exception as e:
         print(f"Error recording to Google Sheets: {e}")
@@ -64,8 +63,8 @@ def callback():
                         event.reply_token,
                         TextMessage(text=f"已收到您的訊息：{user_message}")
                     )
-        except LineBotApiError as e:
-            print(f"Error occurred: {e}")
+        except Exception as e:
+            print(f"Error: {e}")
             abort(400)
         return 'OK'
 
