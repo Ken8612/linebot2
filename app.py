@@ -47,18 +47,18 @@ def record_to_google_sheets(user_id, user_message):
 @app.route("/callback", methods=['POST'])
 def callback():
     if request.method == 'POST':
-        body = request.get_data(as_text=True)
-        signature = request.headers['X-Line-Signature']
+        body = request.get_data(as_text=True)  # 取得請求內容
+        signature = request.headers['X-Line-Signature']  # 取得 Line 訊息簽名
 
         try:
-            events = line_bot_api.parse_events_from_json(body, signature)
+            events = line_bot_api.parse_events(body)  # 使用 parse_events 而非 parse_events_from_json
             for event in events:
                 if isinstance(event, MessageEvent):
-                    user_message = event.message.text
-                    user_id = event.source.user_id
+                    user_message = event.message.text  # 用戶訊息內容
+                    user_id = event.source.user_id  # 用戶 ID
                     # 記錄訊息到 Google Sheets
                     record_to_google_sheets(user_id, user_message)
-                    # 回覆用戶
+                    # 回覆用戶訊息
                     line_bot_api.reply_message(
                         event.reply_token,
                         TextMessage(text=f"已收到您的訊息：{user_message}")
@@ -67,6 +67,7 @@ def callback():
             print(f"Error: {e}")
             abort(400)
         return 'OK'
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
