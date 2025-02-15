@@ -2,7 +2,7 @@ import os
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from linebot import LineBotApi
-from linebot.models import TextMessage, MessageEvent, WebhookHandler
+from linebot.models import TextMessage, MessageEvent
 from flask import Flask, request, abort
 from datetime import datetime
 
@@ -10,7 +10,6 @@ from datetime import datetime
 CHANNEL_ACCESS_TOKEN = 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'  # 替換為你的 Line Channel Access Token
 CHANNEL_SECRET = 'YOUR_LINE_CHANNEL_SECRET'  # 替換為你的 Line Channel Secret
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(CHANNEL_SECRET)
 
 # Google Sheets API 設定
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -51,25 +50,24 @@ def callback():
         signature = request.headers['X-Line-Signature']  # 取得 Line 訊息簽名
 
         try:
-            # 使用 WebhookHandler 來解析事件
-            handler.handle(body, signature)
+            # 使用 LineBotApi 來解析事件
+            events = line_bot_api.parse_events_from_body(body, signature)
+            
+            for event in events:
+                if isinstance(event, MessageEvent):
+                    user_message = event.message.text  # 用戶訊息內容
+                    user_id = event.source.user_id  # 用戶 ID
+                    # 記錄訊息到 Google Sheets
+                    record_to_google_sheets(user_id, user_message)
+                    # 回覆用戶訊息
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextMessage(text=f"已收到您的訊息：{user_message}")
+                    )
         except Exception as e:
             print(f"Error: {e}")
             abort(400)
         return 'OK'
-
-# 設定事件處理
-@handler.add(MessageEvent)
-def handle_message(event):
-    user_message = event.message.text  # 用戶訊息內容
-    user_id = event.source.user_id  # 用戶 ID
-    # 記錄訊息到 Google Sheets
-    record_to_google_sheets(user_id, user_message)
-    # 回覆用戶訊息
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextMessage(text=f"已收到您的訊息：{user_message}")
-    )
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
