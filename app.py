@@ -3,13 +3,16 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from linebot import LineBotApi
 from linebot.models import TextMessage, MessageEvent
+from linebot.exceptions import LineBotApiError
 from flask import Flask, request, abort
 from datetime import datetime
+from linebot.parsers import WebhookParser
 
 # Line Bot 設定
 CHANNEL_ACCESS_TOKEN = 'YOUR_LINE_CHANNEL_ACCESS_TOKEN'  # 替換為你的 Line Channel Access Token
 CHANNEL_SECRET = 'YOUR_LINE_CHANNEL_SECRET'  # 替換為你的 Line Channel Secret
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+parser = WebhookParser(CHANNEL_SECRET)
 
 # Google Sheets API 設定
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -50,8 +53,8 @@ def callback():
         signature = request.headers['X-Line-Signature']  # 取得 Line 訊息簽名
 
         try:
-            # 使用 parse_events_from_body 來解析事件
-            events = line_bot_api.parse_events_from_body(body, signature)
+            # 使用 WebhookParser 來解析事件
+            events = parser.parse(body, signature)
             
             for event in events:
                 if isinstance(event, MessageEvent):
