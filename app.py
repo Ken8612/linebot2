@@ -1,5 +1,4 @@
 import os
-import sys
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from linebot import LineBotApi
@@ -22,7 +21,7 @@ app = Flask(__name__)
 # Google Sheets 服務設定
 def get_google_sheets_service():
     credentials = Credentials.from_service_account_file(
-        'credentials.json', scopes=SCOPES)  # 替換為你的 Service Account 金鑰路徑
+        'config/google-credentials.json', scopes=SCOPES)  # 替換為你的 Service Account 金鑰路徑
     service = build('sheets', 'v4', credentials=credentials)
     return service.spreadsheets()
 
@@ -51,7 +50,9 @@ def callback():
         signature = request.headers['X-Line-Signature']  # 取得 Line 訊息簽名
 
         try:
-            events = line_bot_api.parse_events(body)  # 使用 parse_events 而非 parse_events_from_json
+            # 使用 parse_events_from_body 來解析事件
+            events = line_bot_api.parse_events_from_body(body, signature)
+            
             for event in events:
                 if isinstance(event, MessageEvent):
                     user_message = event.message.text  # 用戶訊息內容
@@ -67,7 +68,6 @@ def callback():
             print(f"Error: {e}")
             abort(400)
         return 'OK'
-
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
